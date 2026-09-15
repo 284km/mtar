@@ -10,8 +10,16 @@ let usage = fn (unit_: unit) ->
   let _ = print_err "usage: mtar list <archive.tar> | mtar extract <archive.tar> <dest>" in
   exit 2;
 
+// The library records a refusal and returns -1; the CLI is where that becomes
+// a message and a non-zero exit, which is what a CLI should do and what a
+// daemon must not.
+let report = fn (verb: str) -> fn (n: int) ->
+  if n < 0 then
+    let _ = print_err ("mtar: refused: " ++ fs_last_error ()) in
+    exit 3
+  else print_err ("mtar: " ++ verb ++ " " ++ show n ++ " entries");
+
 match argv with
-| ["list", a]        -> let n = walk a "." false in print_err ("mtar: " ++ show n ++ " entries")
-| ["extract", a, d]  -> let _ = mkdir_p d in
-                        let n = walk a d true in print_err ("mtar: extracted " ++ show n ++ " entries")
+| ["list", a]        -> report "listed" (walk a "." false)
+| ["extract", a, d]  -> let _ = mkdir_p d in report "extracted" (walk a d true)
 | _                  -> usage ()

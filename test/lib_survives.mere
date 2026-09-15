@@ -1,0 +1,23 @@
+// test/lib_survives.mere — the property the refusal rewrite exists for.
+//
+// A caller that is not a CLI must survive a refused archive. This program
+// refuses three different ways, keeps running after each, and then reads a
+// good archive -- so a refusal is proven not to have left the reader unusable
+// either. If `walk` still called exit, this would stop at the first one and
+// print nothing after it.
+
+import "../tar.mere";
+
+let try = fn (label: str) -> fn (path: str) -> fn (dest: str) ->
+  let n = walk path dest true in
+  if n < 0 then print (label ++ ": refused (" ++ fs_last_error () ++ ")")
+  else print (label ++ ": accepted " ++ show n ++ " entries");
+
+match args () with
+| [bad1, bad2, bad3, good, dest] ->
+    let _ = try "truncated" bad1 dest in
+    let _ = try "bad-magic" bad2 dest in
+    let _ = try "traversal" bad3 dest in
+    let _ = try "good" good dest in
+    print "STILL RUNNING"
+| _ -> let _ = print_err "usage: lib_survives <bad1> <bad2> <bad3> <good> <dest>" in exit 2
