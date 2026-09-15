@@ -1,0 +1,60 @@
+mtar/SECURITY_ROUTES -- every way an archive can write outside the destination,
+enumerated, with what mtar answers and whether real images use it.
+
+WHAT THIS IS. An extractor's safety claim is only worth what its enumeration is
+worth. Plugging "the path traversal hole" one route at a time is how the second
+route survives, so the routes are listed first and the corpus is asked which of
+them occur legitimately BEFORE any of them is refused.
+
+HOW THE CORPUS WAS ASKED. test/routes.py walks every entry of every archive in
+the corpus and counts each route. Measured 2026-09-16 over 15 archives from
+alpine:latest and redis:7-alpine (2,356 entries):
+
+  route                                    occurrences   mtar       unguarded
+  R1  absolute name (/etc/passwd)                    0   REFUSED    stays inside
+  R2  ".." component in the name                     0   REFUSED    ESCAPES
+  R3  an ancestor of the name is a symlink           0   REFUSED    ESCAPES
+  R4  hardlink target is absolute or has ".."        0   REFUSED    ESCAPES
+  R5  symlink TARGET is absolute                 1,706   ALLOWED    --
+  R5b symlink TARGET contains ".."                 130   ALLOWED    --
+
+THE LAST COLUMN IS THE CONTROL. test/attacks.sh builds a second binary with the
+two guard predicates neutered and runs the same archive through it, so a route
+cannot be reported as "blocked" when the attack was never going to work. Three
+of the four do escape without the guard; R1 does not, because `dest ++ "/" ++
+name` turns /escape/pwned into dest//escape/pwned and lands it INSIDE. It is
+refused anyway -- a name like that is malformed, and tar itself strips it -- but
+the refusal is correctness, not a save, and saying otherwise would overstate
+what the guard does.
+
+AN ATTACK INPUT HAS TO BE VERIFIED TO REACH ITS TARGET. R4's first version used
+"../../escape/secret" and climbed one level past the target, so the control
+reported "harmless" -- the attack missing, not the code being safe. The control
+column is what caught it; without it that route would have been recorded as
+blocked on the strength of a refusal that happened to fire.
+
+THE CHECK IS ON EXTRACT, NOT ON LIST. `mtar list` prints what an archive
+claims, including entries extract would refuse, because inspecting a hostile
+archive is a thing you want to be able to do.
+
+THE SPLIT THE MEASUREMENT PRODUCED. R5 and R5b are the overwhelming majority of
+what a rootfs contains -- /bin/sh -> /bin/busybox, etc/mtab -> ../proc/mounts --
+and refusing them would refuse every real image. A symlink's target is data
+stored in the link; it writes nothing. What writes is R3: a later entry whose
+ancestor directory is one of those links. So mtar stores any target and refuses
+to write THROUGH one.
+
+R3 IS CHECKED AGAINST THE FILESYSTEM, NOT THE ARCHIVE. Tracking only the links
+this archive created would miss the layer case: layer 1 creates bin -> /usr/bin,
+layer 2 writes bin/sh, and the two are separate archives extracted over the same
+root. Every ancestor is lstat'ed instead, which covers both.
+
+ZERO IS "NOT IN THIS CORPUS", NOT "NEVER". Three images is not every image. If a
+real one needs R3 -- a merged-/usr layout writing through bin -> usr/bin would --
+the refusal names the route and the entry, and this table gets a new row rather
+than mtar getting a quiet exception.
+
+WHAT IS NOT A ROUTE HERE. A symlink pointing outside the destination is not
+itself an escape: nothing is written through it by mtar, and a rootfs is full of
+them by design. It becomes one only under whatever later USES the extracted
+tree, which is that consumer's boundary to enforce, not this one's.

@@ -44,3 +44,18 @@ int fs_lchown(const char *path, int uid, int gid) {
     if (lchown(path, (uid_t)uid, (gid_t)gid) == 0) return 0;
     return errno == EPERM ? 1 : -1;
 }
+
+/* Is this path itself a symlink? 1 yes, 0 no (including "does not exist").
+ *
+ * This is the one question the name of an entry cannot answer. An archive may
+ * legitimately contain `bin/sh -> /bin/busybox` (1,706 such links in the test
+ * corpus), and the danger is not the link but a LATER entry named `bin/foo`
+ * whose ancestor `bin` is a symlink -- the write lands wherever the link
+ * points. lstat, not stat: stat would follow the very link being asked about.
+ */
+#include <sys/types.h>
+int fs_is_symlink(const char *path) {
+    struct stat st;
+    if (lstat(path, &st) != 0) return 0;
+    return S_ISLNK(st.st_mode) ? 1 : 0;
+}

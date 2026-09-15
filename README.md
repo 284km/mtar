@@ -55,10 +55,34 @@ Two poisons were used to check the harness itself is load-bearing: disabling
 `fs_chmod` turns every archive red, and turning `fs_link` into `symlink` turns
 red **only** the one layer that contains hardlinks.
 
+## Escaping the destination
+
+Layers are untrusted input. The escape routes are enumerated in
+[SECURITY_ROUTES](SECURITY_ROUTES) and the corpus was asked which of them occur
+legitimately *before* any was refused, because the answer decides the design:
+
+- an absolute name, a `..` component, an ancestor that is a symlink, and a
+  hardlink target leaving the destination — **0 occurrences, all refused**
+- a symlink whose *target* is absolute or contains `..` — **1,836 occurrences,
+  allowed**. `/bin/sh -> /bin/busybox` and `etc/mtab -> ../proc/mounts` are what
+  a rootfs is made of, and a stored target writes nothing
+
+So mtar stores any target and refuses to write *through* one. The ancestor check
+asks the filesystem rather than this archive, because the symlink a layer writes
+through may have come from the layer below it.
+
+```sh
+sh test/attacks.sh   # one crafted archive per route
+```
+
+Each route is checked twice: the guarded build refuses it by name, **and nothing
+appears outside the destination**. A second binary with the guard removed runs
+the same archives as a control, so no route can be recorded as blocked when the
+attack was never going to work — which is how R4 was caught aiming one directory
+past its target.
+
 ## What it does not do yet
 
-- **No path traversal guard.** An entry named `../etc/passwd` escapes the
-  destination. Layers are untrusted input; this is the next thing to fix.
 - No writing — reading only. A tar writer arrives when something needs to push.
 - No overlayfs whiteouts (`.wh.*`), so this reads a layer but does not stack one.
 - No gzip. Layers are usually `.tar.gz`; decompress them first

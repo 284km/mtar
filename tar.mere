@@ -16,6 +16,7 @@ extern fn fs_chmod: str -> int -> int;
 extern fn fs_unlink: str -> int;
 extern fn fs_lchmod: str -> int -> int;
 extern fn fs_lchown: str -> int -> int -> int;
+extern fn fs_is_symlink: str -> int;
 
 let block = 512;
 
@@ -69,6 +70,40 @@ let dirname = fn (p: str) ->
   if cut < 0 then "." else substring p 0 cut;
 
 let join2 = fn (a: str) -> fn (b: str) -> a ++ "/" ++ b;
+
+// ---- escape routes: see SECURITY_ROUTES ---------------------------------
+//
+// R1/R2 are decided from the name alone. R3 has to ask the filesystem, because
+// the symlink an entry writes through may have come from an earlier LAYER, not
+// from this archive. R5 (a symlink whose target is absolute or has "..") is
+// NOT refused: 1,836 of the corpus's 2,356 entries are exactly that, and a
+// stored target writes nothing.
+
+let ends_with_dotdot = fn (p: str) ->
+  let n = str_len p in
+  if n < 3 then false else substring p (n - 3) n == "/..";
+
+// R1 + R2: a name that can leave the destination on its own.
+let name_escapes = fn (p: str) ->
+  if str_len p == 0 then true
+  else if char_at p 0 == "/" then true
+  else if p == ".." then true
+  else if str_len p >= 3 then
+    (if substring p 0 3 == "../" then true
+     else if str_index_of p "/../" >= 0 then true
+     else ends_with_dotdot p)
+  else false;
+
+// R3: is any ancestor of dest/name an existing symlink?
+let symlink_ancestor = fn (dest: str) -> fn (name: str) ->
+  let n = str_len name in
+  let rec go = fn (i: int) -> fn (found: str) ->
+    if i >= n then found
+    else if char_at name i == "/" then
+      let anc = dest ++ "/" ++ substring name 0 i in
+      if fs_is_symlink anc == 1 then anc else go (i + 1) found
+    else go (i + 1) found in
+  go 0 "";
 
 // ---- refusals: name what was refused, never approximate it ---------------
 
@@ -129,6 +164,23 @@ let walk = fn (path: str) -> fn (dest: str) -> fn (do_extract: bool) ->
               let t = bytebuf_get b 156 in
               let link = str_at b 157 100 in
               let kind = kind_of t name in
+              let _ =
+                if not do_extract then ()
+                else if name_escapes name then
+                  refuse "R1/R2: a name that leaves the destination" name
+                else if kind == "hardlink" then
+                  (if name_escapes link then
+                     refuse "R4: a hardlink target that leaves the destination"
+                            (name ++ " -> " ++ link)
+                   else ())
+                else () in
+              let _ =
+                if do_extract then
+                  let anc = symlink_ancestor dest name in
+                  if str_len anc > 0 then
+                    refuse ("R3: an ancestor is a symlink (" ++ anc ++ ")") name
+                  else ()
+                else () in
               let out = join2 dest name in
               let _ =
                 if not do_extract then
