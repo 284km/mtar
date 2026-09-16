@@ -154,3 +154,34 @@ order the archive happens to list a directory in.
 `test/whiteout.sh`'s oracle is **a real container**: the image is built with
 docker, so the whiteouts are the ones a real builder emits, and the expected
 answer is what a real runtime shows for it — `find /` inside the container.
+
+## Writing a layer
+
+```
+mtar upper layer.tar ./overlay-upper-dir
+```
+
+The upper directory of an overlay mount **is** the layer: what a build step
+changed, and nothing else. But the kernel and the image format do not spell the
+same things the same way, and exactly two entries need translating:
+
+| overlayfs | image layer |
+|---|---|
+| a character device `0:0` | a file called `.wh.<name>` |
+| xattr `trusted.overlay.opaque=y` | a file called `.wh..wh..opq` inside |
+
+`mtar create` on the same directory **refuses** the device node by name, and
+that is the right answer there — a directory is a directory. Which alphabet is
+in force is the caller's to say, so it is a second spelling, as with
+`extract` / `layer`.
+
+`test/upper.sh`'s oracle is **the kernel**: it mounts a real overlay, runs a
+step against the merged view, and requires
+
+```
+merged  ==  apply(lower) then apply-as-layer(upper)
+```
+
+The left side is what the container saw; the right side is what anyone pulling
+the image gets. It runs on a tmpfs — an upper directory has to hold `trusted.*`
+xattrs, and a container's own overlay root cannot be one.

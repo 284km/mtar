@@ -4,6 +4,7 @@
 //   mtar extract <archive.tar> <dest-dir>
 //   mtar layer   <archive.tar> <dest-dir>   (extract, honouring whiteouts)
 //   mtar create  <archive.tar> <dir>
+//   mtar upper   <archive.tar> <dir>      (create, from an overlay upper dir)
 //
 // `layer` and `extract` differ on one thing: whether a name beginning with
 // `.wh.` is a file or a deletion. Nothing in the archive says which, so the
@@ -16,7 +17,8 @@ let usage = fn (unit_: unit) ->
   let _ = print_err ("usage: mtar list <archive.tar>"
                   ++ " | mtar extract <archive.tar> <dest>"
                   ++ " | mtar layer <archive.tar> <dest>"
-                  ++ " | mtar create <archive.tar> <dir>") in
+                  ++ " | mtar create <archive.tar> <dir>"
+                  ++ " | mtar upper <archive.tar> <overlay-upper-dir>") in
   exit 2;
 
 // The library records a refusal and returns -1; the CLI is where that becomes
@@ -33,4 +35,5 @@ match argv with
 | ["extract", a, d]  -> let _ = mkdir_p d in report "extracted" (walk a d true)
 | ["layer", a, d]    -> let _ = mkdir_p d in report "applied" (walk_opt a d true true)
 | ["create", a, d]   -> report "wrote" (tar_create a d)
+| ["upper", a, d]    -> report "wrote" (tar_create_layer a d)
 | _                  -> usage ()
