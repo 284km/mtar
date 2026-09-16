@@ -96,3 +96,33 @@ else. `lchmod` and `lchown` are the symlink-safe spellings: plain `chmod` on a
 symlink would change the target instead, and on Linux `lchmod` does not exist,
 so the shim reports "not applicable" rather than claiming a write it did not
 make.
+
+
+## Writing
+
+```sh
+mtar create archive.tar dir
+```
+
+Not the reader backwards. Reading an archive means believing what the header
+says; writing one means **deciding** what it says, and every field that is a
+choice is made in one place and written down: the octal fields, the checksum
+computed over a header whose own checksum field is full of spaces, the split of
+a long name between `name[100]` and `prefix[155]` at a slash.
+
+The same subset this package reads — regular files, directories and symlinks.
+Anything else is **refused by name**: a device node or a socket written as a
+regular file is an archive that is wrong in a way no reader can see. So is a
+name that fits neither field, and a file whose size will not cross the FFI
+boundary — a silently truncated size writes a header that says one length and a
+body that is another, which every reader would believe.
+
+**The same tree twice is the same archive.** Directory entries are sorted, so a
+layer that is rebuilt does not get a new digest because a directory was read in
+a different order.
+
+`test/create.sh` is the check and its oracle is `tar`: not that `tar tvf`
+accepts the archive — a reader accepts a great many archives that are not what
+was asked for — but that **extracting it with `tar` gives back the tree it came
+from**, modes and symlinks included. Its poison adds one to the checksum, and
+`tar` is the one that has to notice.

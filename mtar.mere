@@ -2,12 +2,15 @@
 //
 //   mtar list    <archive.tar>
 //   mtar extract <archive.tar> <dest-dir>
+//   mtar create  <archive.tar> <dir>
 
 import "tar.mere";
 
 let argv = args () in
 let usage = fn (unit_: unit) ->
-  let _ = print_err "usage: mtar list <archive.tar> | mtar extract <archive.tar> <dest>" in
+  let _ = print_err ("usage: mtar list <archive.tar>"
+                  ++ " | mtar extract <archive.tar> <dest>"
+                  ++ " | mtar create <archive.tar> <dir>") in
   exit 2;
 
 // The library records a refusal and returns -1; the CLI is where that becomes
@@ -22,4 +25,5 @@ let report = fn (verb: str) -> fn (n: int) ->
 match argv with
 | ["list", a]        -> report "listed" (walk a "." false)
 | ["extract", a, d]  -> let _ = mkdir_p d in report "extracted" (walk a d true)
+| ["create", a, d]   -> report "wrote" (tar_create a d)
 | _                  -> usage ()
