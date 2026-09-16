@@ -126,3 +126,31 @@ accepts the archive — a reader accepts a great many archives that are not what
 was asked for — but that **extracting it with `tar` gives back the tree it came
 from**, modes and symlinks included. Its poison adds one to the checksum, and
 `tar` is the one that has to notice.
+
+## Applying a layer
+
+```
+mtar layer layer.tar ./rootfs
+```
+
+A tar archive cannot say **delete**. A container image layer has to, so the
+image format spells deletion as a *filename*: `.wh.x` beside `x` means x is
+gone, and `.wh..wh..opq` in a directory means the layers below contributed
+nothing to it.
+
+**The reader cannot decide this.** `mtar extract` on an archive that happens to
+hold a file called `.wh.x` must write that file — the name means nothing there.
+Only the caller applying a *layer* knows the convention is in force, which is
+why it is a second spelling and not a rule of the reader. The gate poisons
+exactly that: it applies the same layers with `extract` and requires both
+`etc/motd` and a literal `etc/.wh.motd` to be there afterwards.
+
+The apply runs the walk **twice** — once for the deletions, once for the
+entries. A whiteout is a statement about the layers *below*, and the same layer
+may put something back where it just cleared: `.wh.x` followed by `x`, or an
+opaque directory that is then refilled. In one pass the answer depends on the
+order the archive happens to list a directory in.
+
+`test/whiteout.sh`'s oracle is **a real container**: the image is built with
+docker, so the whiteouts are the ones a real builder emits, and the expected
+answer is what a real runtime shows for it — `find /` inside the container.
